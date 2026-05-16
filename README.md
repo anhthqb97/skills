@@ -6,17 +6,16 @@ A collection of reusable agent skills for AI coding assistants (Cursor, Claude C
 
 ## Available Skills
 
-### `laravel-specialist`
-
-Expert Laravel 13 / PHP 8.3+ engineer skill. Covers:
-
-- Module-based architecture (`nwidart/laravel-modules`)
-- Action/UseCase + Repository pattern
-- Eloquent ORM with PHP Attributes (`#[Fillable]`, `#[ObservedBy]`, etc.)
-- JSON:API resources, FormRequest validation
-- Queue jobs with PHP 8.3 Attributes
-- Sanctum authentication
-- Bilingual i18n (`lang/en` + `lang/vi`)
+| Skill | Description |
+|-------|-------------|
+| `laravel-specialist` | Core architecture — Controller → Action → Repository → Model, PHP Attributes, Eloquent, FormRequest |
+| `laravel-testing` | Pest PHP — feature tests, unit tests, factories, mocking, TDD |
+| `laravel-api` | REST API design — versioning, JSON:API resources, rate limiting, response envelope |
+| `laravel-security` | Policies, Gates, Sanctum scopes, OWASP, mass assignment, input hardening |
+| `laravel-performance` | N+1 fixes, eager loading, Redis caching, DB indexing, chunking |
+| `laravel-queue` | Horizon, job batching, chaining, retry strategies, failed job handling |
+| `laravel-modules` | nwidart/laravel-modules — bounded contexts, cross-module events, service providers |
+| `laravel-livewire` | Livewire 3 + Alpine.js — real-time forms, file uploads, lazy components |
 
 ## Install
 
