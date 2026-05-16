@@ -483,3 +483,4 @@ Always return:
 |-------|------|-----------|
 | Eloquent deep-dive | `references/eloquent.md` | Complex queries, relationships, scopes |
 | Module architecture | `references/architecture.md` | Creating new modules, cross-module patterns |
+| Senior architecture patterns | `references/patterns.md` | DDD, Action, Repository, DTO, Value Objects, Strategy, Events |
