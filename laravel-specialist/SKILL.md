@@ -195,6 +195,7 @@ use Illuminate\Support\Facades\{DB, Log};
 use Modules\Inventory\App\DTOs\CreateAssetDTO;
 use Modules\Inventory\App\Http\Requests\Asset\CreateRequest;
 use Modules\Inventory\App\Http\Resources\AssetResource;
+use Modules\Inventory\App\Models\Asset;
 use Modules\Inventory\App\Repositories\AssetRepository;
 use Modules\Inventory\App\UseCases\Asset\CreateAction;
 
@@ -380,8 +381,10 @@ final class SendAssetNotification implements ShouldQueue
         ]);
     }
 }
+```
 
-// arch-queue-routing — centralized routing in AppServiceProvider
+```php
+// AppServiceProvider::boot() — arch-queue-routing: centralized job routing
 Queue::route(SendAssetNotification::class, 'redis');
 ```
 
