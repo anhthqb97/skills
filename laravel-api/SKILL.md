@@ -244,6 +244,84 @@ final class ListRequest extends FormRequest
 }
 ```
 
+## Cursor Pagination (large datasets)
+
+```php
+// Repository — use cursorPaginate for sequential large lists
+public function listCursor(array $filters): \Illuminate\Pagination\CursorPaginator
+{
+    return $this->model->query()
+        ->select(['id', 'name', 'code', 'status', 'created_at'])
+        ->with(['location:id,name'])
+        ->orderBy('id')          // must have stable sort column
+        ->cursorPaginate($filters['per_page'] ?? 50);
+}
+
+// Response — cursor replaces page number
+return response()->json([
+    'status'      => 'success',
+    'data'        => AssetResource::collection($assets),
+    'next_cursor' => $assets->nextCursor()?->encode(),
+    'prev_cursor' => $assets->previousCursor()?->encode(),
+]);
+```
+
+## Correlation ID Tracking
+
+```php
+// Middleware — always return request ID so clients can trace errors
+final class AttachRequestId
+{
+    public function handle(Request $request, \Closure $next): mixed
+    {
+        $id = $request->header('X-Request-ID') ?? (string) \Illuminate\Support\Str::uuid();
+        $request->headers->set('X-Request-ID', $id);
+        \Illuminate\Support\Facades\Log::withContext(['request_id' => $id]);
+        return $next($request)->header('X-Request-ID', $id);
+    }
+}
+```
+
+## HTTP Response Caching (ETag)
+
+```php
+// For read-only endpoints that change infrequently
+public function show(int $id): Response
+{
+    $asset   = $this->repository->findOrFail($id);
+    $etag    = md5($asset->updated_at->timestamp . $asset->id);
+    $ifNone  = request()->header('If-None-Match');
+
+    if ($ifNone === $etag) {
+        return response('', 304);  // Not Modified
+    }
+
+    return response()->json([
+        'status' => 'success',
+        'data'   => new AssetResource($asset),
+    ])->header('ETag', $etag)
+      ->header('Cache-Control', 'private, max-age=60');
+}
+```
+
+## API Versioning Strategy
+
+```php
+// routes/api.php
+Route::prefix('v1')->name('api.v1.')->group(base_path('routes/api/v1.php'));
+Route::prefix('v2')->name('api.v2.')->group(base_path('routes/api/v2.php'));
+
+// Deprecation header — warn consumers before breaking
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
+    Route::get('assets', [V1\AssetController::class, 'index'])
+        ->middleware(fn($req, $next) => $next($req)
+            ->header('Deprecation', 'true')
+            ->header('Sunset', 'Sat, 01 Jan 2027 00:00:00 GMT')
+            ->header('Link', '</api/v2/assets>; rel="successor-version"')
+        );
+});
+```
+
 ## Constraints
 
 ### MUST DO
