@@ -183,6 +183,93 @@ Asset::withCount(['maintenances as open_count' => fn($q) => $q->where('status', 
 | Session / temp | Short TTL | Redis session driver |
 | Never cache | — | Financial totals, real-time inventory counts |
 
+## Laravel Octane (Production Throughput)
+
+```php
+// Install: composer require laravel/octane
+// config/octane.php
+'server'  => env('OCTANE_SERVER', 'frankenphp'), // or 'swoole', 'roadrunner'
+'workers' => env('OCTANE_WORKERS', 4),           // CPU cores
+'max_requests' => 500,                            // recycle workers to prevent memory leaks
+
+// Start: php artisan octane:start --workers=4 --task-workers=2
+```
+
+```php
+// Octane-safe — flush state between requests
+final class AppServiceProvider extends ServiceProvider
+{
+    public function boot(): void
+    {
+        // Re-bind per-request singletons to prevent state leaks
+        \Laravel\Octane\Facades\Octane::tick('flush-state', function () {
+            app()->forgetInstance(RequestContext::class);
+        })->seconds(0);  // every request
+    }
+}
+```
+
+## Read Replica Routing
+
+```php
+// config/database.php — route reads to replica, writes to primary
+'mysql' => [
+    'read'  => ['host' => env('DB_READ_HOST', '127.0.0.1')],
+    'write' => ['host' => env('DB_HOST', '127.0.0.1')],
+    'sticky' => true,   // read-your-own-writes after a write
+],
+
+// Force primary for time-critical reads (after a write)
+$asset = Asset::on('mysql::write')->find($id);
+
+// Use read replica explicitly
+$assets = Asset::on('mysql::read')->paginate(15);
+```
+
+## Query Analysis (EXPLAIN)
+
+```php
+// In dev — analyze slow queries before deploying
+// AppServiceProvider::boot() — log queries over 100ms
+if (app()->isLocal()) {
+    \Illuminate\Support\Facades\DB::listen(function ($query) {
+        if ($query->time > 100) {
+            \Illuminate\Support\Facades\Log::warning('slow.query', [
+                'sql'      => $query->sql,
+                'bindings' => $query->bindings,
+                'time_ms'  => $query->time,
+            ]);
+        }
+    });
+}
+
+// Get EXPLAIN output for a query
+$explain = \Illuminate\Support\Facades\DB::select(
+    'EXPLAIN ' . Asset::where('status', 'active')->toSql(),
+    Asset::where('status', 'active')->getBindings()
+);
+// Check type = 'ALL' (full scan) → add index
+// Check rows = large number → composite index needed
+```
+
+## Full-Text Search vs LIKE
+
+```php
+// BAD for large tables — LIKE with leading wildcard kills indexes
+Asset::where('name', 'like', "%{$search}%")->get();  // full table scan
+
+// GOOD — MySQL full-text index
+// Migration:
+$table->fullText(['name', 'code']);
+
+// Query:
+Asset::whereFullText(['name', 'code'], $search)->paginate(15);
+
+// BEST for complex search — dedicated search engine
+// Meilisearch via Laravel Scout:
+Asset::search($search)->paginate(15);  // instant, typo-tolerant
+```
+
 ## Constraints
 
 ### MUST DO
