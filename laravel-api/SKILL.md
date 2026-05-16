@@ -142,8 +142,10 @@ namespace Modules\Inventory\App\Http\Controllers\Api;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\{DB, Log};
+use Modules\Inventory\App\DTOs\CreateAssetDTO;
 use Modules\Inventory\App\Http\Requests\Asset\{CreateRequest, ListRequest};
 use Modules\Inventory\App\Http\Resources\{AssetCollection, AssetResource};
+use Modules\Inventory\App\Models\Asset;
 use Modules\Inventory\App\Repositories\AssetRepository;
 use Modules\Inventory\App\UseCases\Asset\CreateAction;
 
@@ -155,6 +157,7 @@ final class AssetController
 
     public function index(ListRequest $request): AssetCollection
     {
+        $this->authorize('viewAny', Asset::class);
         $assets = $this->repository->listTable($request->validated());
         return new AssetCollection($assets);
     }
@@ -162,6 +165,7 @@ final class AssetController
     public function show(int $id): JsonResponse
     {
         $asset = $this->repository->findOrFail($id);
+        $this->authorize('view', $asset);
         return response()->json([
             'status' => 'success',
             'data'   => new AssetResource($asset),
@@ -170,8 +174,11 @@ final class AssetController
 
     public function store(CreateRequest $request, CreateAction $action): JsonResponse
     {
+        $this->authorize('create', Asset::class);
         try {
-            DB::transaction(fn() => $action($request->validated()));
+            $asset = DB::transaction(
+                fn() => $action(CreateAssetDTO::fromArray($request->validated()))
+            );
             return response()->json(['status' => 'success', 'message' => __('inventory::lang.created')]);
         } catch (\Throwable $th) {
             Log::error($th);
@@ -217,6 +224,7 @@ namespace Modules\Inventory\App\Http\Requests\Asset;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Modules\Inventory\App\Enums\Models\Asset\AssetStatusEnum;
 
 final class ListRequest extends FormRequest
 {
