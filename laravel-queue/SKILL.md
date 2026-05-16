@@ -216,6 +216,102 @@ php artisan queue:flush
 php artisan queue:failed
 ```
 
+## `ShouldBeUnique` — Deduplication
+
+```php
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+
+#[Connection('redis')]
+#[Queue('notifications')]
+#[Tries(3)]
+#[Timeout(60)]
+final class SendAssetNotification implements ShouldQueue, ShouldBeUnique
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $uniqueFor = 3600;  // lock for 1 hour
+
+    public function uniqueId(): string
+    {
+        return "asset-notification-{$this->asset->id}-{$this->event}";
+    }
+}
+// Duplicate dispatches within 1 hour are silently dropped
+```
+
+## Idempotency Keys in DB
+
+```php
+// For jobs that touch external APIs — store result to prevent double execution
+final class ChargeAssetFeeJob implements ShouldQueue
+{
+    public function handle(): void
+    {
+        $key = "charge:{$this->asset->id}:{$this->chargeDate}";
+
+        $processed = \Illuminate\Support\Facades\Cache::remember(
+            key: $key,
+            ttl: now()->addDays(7),
+            callback: function () {
+                // execute once — subsequent retries hit cache and return early
+                return $this->paymentService->charge($this->asset, $this->amount);
+            }
+        );
+
+        Log::info('charge.processed', ['result' => $processed, 'key' => $key]);
+    }
+}
+```
+
+## Circuit Breaker (External API Jobs)
+
+```php
+use Illuminate\Queue\Middleware\ThrottlesExceptions;
+
+final class SyncToExternalSystemJob implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public function middleware(): array
+    {
+        return [
+            // Allow 5 failures per 10 minutes — then pause job for 5 minutes
+            (new ThrottlesExceptions(5, 10))->backoff(5),
+        ];
+    }
+
+    public function handle(): void
+    {
+        // If external API is down, ThrottlesExceptions will back off automatically
+        $this->externalService->sync($this->asset);
+    }
+}
+```
+
+## Dead Letter Queue Pattern
+
+```php
+// Jobs that exhaust retries go to the failed_jobs table
+// Separate supervisor reads failed jobs for alerting
+#[Tries(3)]
+#[Timeout(60)]
+final class CriticalSyncJob implements ShouldQueue
+{
+    public function failed(\Throwable $e): void
+    {
+        Log::critical('critical.sync.exhausted', [
+            'job'      => static::class,
+            'asset_id' => $this->asset->id,
+            'error'    => $e->getMessage(),
+        ]);
+
+        // Notify on-call team
+        \Illuminate\Support\Facades\Notification::route('slack', config('services.slack.webhook'))
+            ->notify(new \App\Notifications\JobExhaustedNotification($this, $e));
+    }
+}
+```
+
 ## Constraints
 
 ### MUST DO
