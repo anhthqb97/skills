@@ -173,14 +173,20 @@ Inventory Module         →   Event: AssetDisposed
 ### Firing an Event
 
 ```php
-// In Action
+// In Action — always accept DTO, never raw array
+use Modules\Inventory\App\DTOs\CreateAssetDTO;
 use Modules\Inventory\App\Events\AssetCreated;
 
 final class CreateAction
 {
-    public function __invoke(array $data): Asset
+    public function __invoke(CreateAssetDTO $dto): Asset
     {
-        $asset = $this->repository->create($data);
+        $asset = $this->repository->create([
+            'name'        => $dto->name,
+            'code'        => $dto->code,
+            'status'      => $dto->status,
+            'location_id' => $dto->locationId,
+        ]);
         AssetCreated::dispatch($asset);
         return $asset;
     }
@@ -272,6 +278,60 @@ return [
     ],
     "aliases": {},
     "files": []
+}
+```
+
+## Shared Kernel (Core Module)
+
+```
+Modules/
+└── Core/                          ← shared kernel — no business logic
+    └── App/
+        ├── Contracts/
+        │   └── BaseRepositoryInterface.php   ← interface all repos implement
+        ├── Repositories/
+        │   └── BaseRepository.php            ← abstract Eloquent base
+        ├── Enums/
+        │   └── BaseEnum.php                  ← label(), color(), cases()
+        ├── DTOs/
+        │   └── PaginationDTO.php             ← shared pagination params
+        └── Exceptions/
+            └── BusinessRuleException.php     ← domain rule violations
+```
+
+```php
+// Core contract — all repositories implement this
+namespace Modules\Core\App\Contracts;
+
+interface BaseRepositoryInterface
+{
+    public function findOrFail(int $id): \Illuminate\Database\Eloquent\Model;
+    public function create(array $data): \Illuminate\Database\Eloquent\Model;
+    public function update(int $id, array $data): \Illuminate\Database\Eloquent\Model;
+    public function delete(int $id): void;
+}
+```
+
+```php
+// BusinessRuleException — domain-layer errors, caught in controller
+namespace Modules\Core\App\Exceptions;
+
+final class BusinessRuleException extends \RuntimeException
+{
+    public function __construct(string $message, private readonly string $field = '')
+    {
+        parent::__construct($message);
+    }
+
+    public function getField(): string { return $this->field; }
+}
+
+// Controller catch
+} catch (BusinessRuleException $e) {
+    return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+} catch (\Throwable $th) {
+    Log::error($th);
+    return response()->json(['status' => 'error', 'message' => __('lang.action_failed')], 500);
 }
 ```
 
