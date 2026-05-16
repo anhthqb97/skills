@@ -202,6 +202,88 @@ public function login(LoginRequest $request): JsonResponse
 }
 ```
 
+## Security Response Headers
+
+```php
+// app/Http/Middleware/SecurityHeaders.php
+final class SecurityHeaders
+{
+    public function handle(Request $request, \Closure $next): mixed
+    {
+        return $next($request)
+            ->header('X-Content-Type-Options', 'nosniff')
+            ->header('X-Frame-Options', 'DENY')
+            ->header('X-XSS-Protection', '1; mode=block')
+            ->header('Referrer-Policy', 'strict-origin-when-cross-origin')
+            ->header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+            ->header('Content-Security-Policy', "default-src 'self'; script-src 'self'")
+            ->header('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+            ->removeHeader('X-Powered-By')
+            ->removeHeader('Server');
+    }
+}
+```
+
+```php
+// Register globally in bootstrap/app.php
+->withMiddleware(function ($middleware) {
+    $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+})
+```
+
+## Field-Level Encryption (Sensitive Data at Rest)
+
+```php
+// Model — encrypt PII fields transparently
+use Illuminate\Database\Eloquent\Casts\AsEncryptedString;
+
+final class User extends Authenticatable
+{
+    protected function casts(): array
+    {
+        return [
+            'national_id'   => AsEncryptedString::class,   // encrypted in DB
+            'bank_account'  => AsEncryptedString::class,
+            'phone'         => AsEncryptedString::class,
+        ];
+    }
+}
+```
+
+## Audit Trail
+
+```php
+// Observer — automatic audit log on every write
+final class AssetObserver
+{
+    public function created(Asset $asset): void  { $this->log('created', $asset); }
+    public function updated(Asset $asset): void  { $this->log('updated', $asset, $asset->getChanges()); }
+    public function deleted(Asset $asset): void  { $this->log('deleted', $asset); }
+
+    private function log(string $action, Asset $asset, array $changes = []): void
+    {
+        \Illuminate\Support\Facades\Log::channel('audit')->info("asset.{$action}", [
+            'asset_id'   => $asset->id,
+            'user_id'    => auth()->id(),
+            'ip'         => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'changes'    => $changes,
+            'request_id' => request()->header('X-Request-ID'),
+        ]);
+    }
+}
+```
+
+```php
+// config/logging.php — dedicated audit channel (never auto-rotate sensitive logs)
+'audit' => [
+    'driver' => 'daily',
+    'path'   => storage_path('logs/audit/audit.log'),
+    'days'   => 365,  // keep 1 year for compliance
+    'formatter' => \Monolog\Formatter\JsonFormatter::class,
+],
+```
+
 ## Security Checklist
 
 | Risk | Laravel Mitigation | Status |
