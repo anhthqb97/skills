@@ -271,6 +271,87 @@ public function refreshList(): void
 }
 ```
 
+## Authorization in Livewire Components
+
+```php
+// Always authorize in mount() and in action methods
+final class AssetIndex extends Component
+{
+    public function mount(): void
+    {
+        $this->authorize('viewAny', Asset::class);
+    }
+
+    public function delete(int $id): void
+    {
+        $asset = Asset::findOrFail($id);
+        $this->authorize('delete', $asset);
+
+        try {
+            DB::transaction(fn() => app(DeleteAction::class)(new DeleteAssetDTO(id: $id)));
+            $this->dispatch('notify', type: 'success', message: __('inventory::lang.deleted'));
+        } catch (\Throwable $th) {
+            Log::error($th);
+            $this->dispatch('notify', type: 'error', message: __('inventory::lang.action_failed'));
+        }
+    }
+}
+```
+
+## Computed Properties (cache expensive renders)
+
+```php
+use Livewire\Attributes\Computed;
+
+final class AssetIndex extends Component
+{
+    public string $search = '';
+
+    // Cache result for this render cycle — recalculates only when $search changes
+    #[Computed]
+    public function assets(): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return app(AssetRepository::class)->listTable([
+            'search'   => $this->search,
+            'per_page' => 15,
+        ]);
+    }
+
+    #[Computed]
+    public function totalActive(): int
+    {
+        return Asset::active()->count();
+    }
+
+    public function render(): \Illuminate\View\View
+    {
+        return view('inventory::livewire.asset.index');
+        // Access in blade: $this->assets, $this->totalActive
+    }
+}
+```
+
+## Polling vs WebSocket Strategy
+
+| Need | Solution | Code |
+|------|----------|------|
+| Update every N seconds | `wire:poll` | `<div wire:poll.5s>` |
+| Real-time push (server → browser) | Laravel Echo + Reverb | `Echo.channel('assets').listen(...)` |
+| Job progress tracking | Livewire + polling | `wire:poll.2s="checkStatus"` |
+| Chat / live feed | Reverb WebSocket | Full duplex, persistent connection |
+
+```blade
+{{-- Polling — refresh stats every 10 seconds --}}
+<div wire:poll.10s="$refresh">
+    Active assets: {{ $this->totalActive }}
+</div>
+
+{{-- Only poll when tab is visible --}}
+<div wire:poll.10s.visible="$refresh">
+    {{ $this->totalActive }}
+</div>
+```
+
 ## Constraints
 
 ### MUST DO
