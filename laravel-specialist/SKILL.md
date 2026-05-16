@@ -10,7 +10,7 @@ description: >-
 license: MIT
 metadata:
   author: https://github.com/anhthqb97
-  version: "2.0.0"
+  version: "2.1.0"
   domain: backend
   triggers: Laravel, Eloquent, PHP 8.3, Artisan, Blade, Livewire, Sanctum, Horizon, laravel-modules, UseCase, Repository, FormRequest, Migration, Queue, Job
   role: specialist
@@ -469,6 +469,114 @@ Always return:
 - Return exception messages or stack traces in API responses
 - `new ActionClass()` — always inject via container
 - Pass `$request->all()` to actions — always `$request->validated()` then DTO
+
+## Repository Contract Interface — Dependency Inversion
+
+```php
+<?php declare(strict_types=1);
+
+namespace Modules\Inventory\App\Contracts;
+
+use Illuminate\Pagination\LengthAwarePaginator;
+use Modules\Inventory\App\Models\Asset;
+
+interface AssetRepositoryInterface
+{
+    public function listTable(array $filters): LengthAwarePaginator;
+    public function findOrFail(int $id): Asset;
+    public function create(array $data): Asset;
+    public function update(int $id, array $data): Asset;
+    public function delete(int $id): void;
+}
+```
+
+```php
+// Bind in InventoryServiceProvider::register()
+$this->app->bind(
+    \Modules\Inventory\App\Contracts\AssetRepositoryInterface::class,
+    \Modules\Inventory\App\Repositories\AssetRepository::class,
+);
+
+// Inject the interface — never the concrete class
+final class CreateAction
+{
+    public function __construct(
+        private readonly AssetRepositoryInterface $repository,
+    ) {}
+}
+```
+
+## Structured Logging & Observability
+
+```php
+// ALWAYS use structured context — never string interpolation in log messages
+Log::info('asset.created', [
+    'asset_id'    => $asset->id,
+    'code'        => $asset->code,
+    'user_id'     => auth()->id(),
+    'ip'          => request()->ip(),
+    'request_id'  => request()->header('X-Request-ID'),
+]);
+
+Log::error('asset.create.failed', [
+    'dto'         => $dto,
+    'exception'   => $e->getMessage(),
+    'trace'       => $e->getTraceAsString(),
+    'user_id'     => auth()->id(),
+]);
+```
+
+```php
+// config/logging.php — JSON channel for production
+'production' => [
+    'driver'    => 'daily',
+    'path'      => storage_path('logs/laravel.log'),
+    'formatter' => \Monolog\Formatter\JsonFormatter::class,
+    'days'      => 30,
+],
+```
+
+```php
+// Middleware — attach correlation ID to every request
+final class AttachRequestId
+{
+    public function handle(Request $request, \Closure $next): mixed
+    {
+        $requestId = $request->header('X-Request-ID') ?? (string) \Illuminate\Support\Str::uuid();
+        $request->headers->set('X-Request-ID', $requestId);
+
+        \Illuminate\Support\Facades\Log::withContext(['request_id' => $requestId]);
+
+        return $next($request)->header('X-Request-ID', $requestId);
+    }
+}
+```
+
+## Health Check Endpoint
+
+```php
+// routes/api.php — public, no auth
+Route::get('/health', function (): \Illuminate\Http\JsonResponse {
+    $checks = [
+        'database' => fn() => \Illuminate\Support\Facades\DB::connection()->getPdo() !== null,
+        'cache'    => fn() => \Illuminate\Support\Facades\Cache::set('health', 1, 5),
+        'queue'    => fn() => \Illuminate\Support\Facades\Queue::size() >= 0,
+    ];
+
+    $results = collect($checks)->map(fn($check, $name) => [
+        'name'   => $name,
+        'status' => rescue($check, false) ? 'ok' : 'fail',
+    ]);
+
+    $allOk = $results->every(fn($r) => $r['status'] === 'ok');
+
+    return response()->json([
+        'status'  => $allOk ? 'healthy' : 'degraded',
+        'checks'  => $results,
+        'version' => config('app.version', '1.0.0'),
+    ], $allOk ? 200 : 503);
+});
+```
 
 ## Validation Checkpoints
 
