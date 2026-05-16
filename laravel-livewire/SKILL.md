@@ -124,12 +124,12 @@ final class AssetCreateForm extends Component
         $this->validate();
 
         try {
-            DB::transaction(fn() => $action([
-                'name'        => $this->name,
-                'code'        => $this->code,
-                'status'      => $this->status,
-                'location_id' => $this->location_id,
-            ]));
+            DB::transaction(fn() => $action(new \Modules\Inventory\App\DTOs\CreateAssetDTO(
+                name:       $this->name,
+                code:       $this->code,
+                status:     $this->status,
+                locationId: (int) $this->location_id,
+            )));
 
             $this->isOpen = false;
             $this->dispatch('asset-created');
@@ -229,7 +229,7 @@ final class AssetImport extends Component
         $this->validate();
 
         $path = $this->file->store('imports', 'local');
-        $action(['path' => $path]);
+        $action(new \Modules\Inventory\App\DTOs\ImportAssetDTO(path: $path));
 
         $this->file = null;
         $this->dispatch('import-started');
