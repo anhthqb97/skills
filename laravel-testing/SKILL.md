@@ -105,6 +105,8 @@ it('returns paginated asset list', function () {
 ```php
 <?php declare(strict_types=1);
 
+use Modules\Inventory\App\DTOs\CreateAssetDTO;
+use Modules\Inventory\App\Models\Asset;
 use Modules\Inventory\App\UseCases\Asset\CreateAction;
 use Modules\Inventory\App\Repositories\AssetRepository;
 
@@ -112,11 +114,19 @@ it('creates asset via repository', function () {
     $repository = Mockery::mock(AssetRepository::class);
     $repository->shouldReceive('create')
         ->once()
-        ->with(['name' => 'Laptop', 'code' => 'A001'])
-        ->andReturn(true);
+        ->withArgs(fn(array $data) => $data['code'] === 'ASSET-001')
+        ->andReturn(Asset::factory()->make());
 
-    $action = new CreateAction($repository);
-    $action(['name' => 'Laptop', 'code' => 'A001']);
+    // Resolve via container — never use `new CreateAction()`
+    $this->app->instance(AssetRepository::class, $repository);
+    $action = app(CreateAction::class);
+
+    $action(new CreateAssetDTO(
+        name:       'Laptop',
+        code:       'ASSET-001',
+        status:     'active',
+        locationId: 1,
+    ));
 });
 ```
 
@@ -185,7 +195,12 @@ it('fires AssetCreated event', function () {
     \Illuminate\Support\Facades\Event::fake();
 
     $action = app(\Modules\Inventory\App\UseCases\Asset\CreateAction::class);
-    $action(['name' => 'Laptop', 'code' => 'A001', 'status' => 'active', 'location_id' => 1]);
+    $action(new \Modules\Inventory\App\DTOs\CreateAssetDTO(
+        name:       'Laptop',
+        code:       'ASSET-001',
+        status:     'active',
+        locationId: 1,
+    ));
 
     \Illuminate\Support\Facades\Event::assertDispatched(
         \Modules\Inventory\App\Events\AssetCreated::class
