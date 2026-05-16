@@ -145,11 +145,11 @@ public function authorize(): bool
 ### Mass Assignment Protection
 
 ```php
-// ALWAYS use #[Fillable] — never $guarded = []
+// GOOD — explicit allowlist via PHP Attribute
 #[Fillable(['name', 'code', 'status', 'location_id'])]
 final class Asset extends Model {}
 
-// ALWAYS use $request->validated() — never $request->all()
+// GOOD — only validated data passed to action
 $action($request->validated());
 ```
 
