@@ -255,6 +255,66 @@ uses(
 uses(\Tests\TestCase::class)->in('Unit');
 ```
 
+## Architecture Tests (Pest `arch()`)
+
+```php
+<?php declare(strict_types=1);
+
+// tests/Architecture/ModuleArchTest.php
+describe('Inventory module architecture', function () {
+
+    arch('Actions must be final')
+        ->expect('Modules\Inventory\App\UseCases')
+        ->toBeFinal();
+
+    arch('Controllers must not query DB directly')
+        ->expect('Modules\Inventory\App\Http\Controllers')
+        ->not->toUse(['Illuminate\Support\Facades\DB', 'Illuminate\Database\Eloquent\Model']);
+
+    arch('Repositories are the only DB layer')
+        ->expect('Modules\Inventory\App\Repositories')
+        ->toExtend('Xalpha\Core\App\Repositories\BaseRepository');
+
+    arch('DTOs must be readonly')
+        ->expect('Modules\Inventory\App\DTOs')
+        ->toBeReadonly();
+
+    arch('Models must use SoftDeletes')
+        ->expect('Modules\Inventory\App\Models')
+        ->toUseTrait('Illuminate\Database\Eloquent\SoftDeletes');
+
+    arch('No debug statements left in code')
+        ->expect('Modules')
+        ->not->toUse(['dd', 'dump', 'var_dump', 'print_r', 'ray']);
+});
+```
+
+## `ShouldBeUnique` Job Test
+
+```php
+it('does not dispatch duplicate notifications for same asset', function () {
+    \Illuminate\Support\Facades\Queue::fake();
+
+    $asset = Asset::factory()->create();
+
+    SendAssetNotification::dispatch($asset, 'created');
+    SendAssetNotification::dispatch($asset, 'created');
+
+    \Illuminate\Support\Facades\Queue::assertPushed(SendAssetNotification::class, 1);
+});
+```
+
+## Performance Guard — No Slow Tests
+
+```php
+// pest.php — fail test if it exceeds 500ms
+uses()->afterEach(function () {
+    if (microtime(true) - $this->startTime > 0.5) {
+        $this->fail('Test exceeded 500ms — check for missing fakes or DB queries');
+    }
+})->in('Unit');
+```
+
 ## Validation Checkpoints
 
 | Stage | Command | Expected |
